@@ -854,6 +854,7 @@ void mp_lobby::process_network_data(const config& data)
 			new_info.id = queue_update["queue_id"].to_int();
 			new_info.players_required = queue_update["players_required"].to_int();
 			new_info.display_name = queue_update["display_name"].str();
+			new_info.required_addons = utils::split(queue_update["required_addons"].str());
 		} else {
 			for(mp::queue_info& info : queues) {
 				if(info.id == queue_update["queue_id"].to_int()) {
@@ -868,6 +869,9 @@ void mp_lobby::process_network_data(const config& data)
 						}
 						if(queue_update->has_attribute("current_players")){
 							info.current_players = utils::split_set(queue_update["current_players"].str());
+						}
+						if(queue_update->has_attribute("required_addons")) {
+							info.required_addons = utils::split(queue_update["required_addons"].str());
 						}
 					} else {
 						continue;

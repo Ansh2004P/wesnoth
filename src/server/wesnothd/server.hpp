@@ -17,18 +17,16 @@
 
 #include "config.hpp"
 #include "mt_rng.hpp"
-#include "server/common/user_handler.hpp"
-#include "server/wesnothd/metrics.hpp"
-#include "server/wesnothd/ban.hpp"
-#include "server/wesnothd/player.hpp"
-#include "server/common/simple_wml.hpp"
 #include "server/common/server_base.hpp"
+#include "server/common/simple_wml.hpp"
+#include "server/common/user_handler.hpp"
+#include "server/wesnothd/ban.hpp"
+#include "server/wesnothd/metrics.hpp"
+#include "server/wesnothd/player.hpp"
 #include "server/wesnothd/player_connection.hpp"
-
 #include "utils/optional_fwd.hpp"
 
 #include <boost/asio/steady_timer.hpp>
-
 #include <chrono>
 #include <random>
 
@@ -43,7 +41,9 @@ public:
 	// We keep this flag for coroutines. Since they get their stack unwinding done after player_connections_
 	// is already destroyed they need to know to avoid calling remove_player() on invalid iterators.
 	bool destructed = false;
-	~server() {
+
+	~server()
+	{
 		destructed = true;
 	}
 
@@ -51,13 +51,29 @@ private:
 	void handle_new_client(socket_ptr socket);
 	void handle_new_client(tls_socket_ptr socket);
 
-	template<class SocketPtr> void login_client(boost::asio::yield_context yield, SocketPtr socket);
-	template<class SocketPtr> bool is_login_allowed(boost::asio::yield_context yield, SocketPtr socket, const simple_wml::node* const login, const std::string& username, bool& registered, bool& is_moderator);
-	template<class SocketPtr> bool authenticate(SocketPtr socket, const std::string& username, const std::string& password, bool name_taken, bool& registered);
-	template<class SocketPtr> void send_password_request(SocketPtr socket, const std::string& msg, const char* error_code = "", bool force_confirmation = false);
-	bool accepting_connections() const { return !graceful_restart; }
+	template<class SocketPtr>
+	void login_client(boost::asio::yield_context yield, SocketPtr socket);
+	template<class SocketPtr>
+	bool is_login_allowed(boost::asio::yield_context yield,
+		SocketPtr socket,
+		const simple_wml::node* const login,
+		const std::string& username,
+		bool& registered,
+		bool& is_moderator);
+	template<class SocketPtr>
+	bool authenticate(
+		SocketPtr socket, const std::string& username, const std::string& password, bool name_taken, bool& registered);
+	template<class SocketPtr>
+	void send_password_request(
+		SocketPtr socket, const std::string& msg, const char* error_code = "", bool force_confirmation = false);
 
-	template<class SocketPtr> void handle_player(boost::asio::yield_context yield, SocketPtr socket, player_iterator player);
+	bool accepting_connections() const
+	{
+		return !graceful_restart;
+	}
+
+	template<class SocketPtr>
+	void handle_player(boost::asio::yield_context yield, SocketPtr socket, player_iterator player);
 	void handle_player_in_lobby(player_iterator player, simple_wml::document& doc);
 	void handle_player_in_game(player_iterator player, simple_wml::document& doc);
 	void handle_whisper(player_iterator player, simple_wml::node& whisper);
@@ -74,33 +90,34 @@ private:
 	void remove_player(player_iterator player);
 
 public:
-	template<class SocketPtr> void send_server_message(SocketPtr socket, const std::string& message, const std::string& type);
-	void send_server_message(player_iterator player, const std::string& message, const std::string& type) {
+	template<class SocketPtr>
+	void send_server_message(SocketPtr socket, const std::string& message, const std::string& type);
+
+	void send_server_message(player_iterator player, const std::string& message, const std::string& type)
+	{
 		utils::visit(
-			[this, &message, &type](auto&& socket) { send_server_message(socket, message, type); },
-			player->socket()
-		);
+			[this, &message, &type](auto&& socket) { send_server_message(socket, message, type); }, player->socket());
 	}
+
 	void send_to_lobby(simple_wml::document& data, utils::optional<player_iterator> exclude = {});
-	void send_to_player(player_iterator player, simple_wml::document& data) {
-		utils::visit(
-			[this, &data](auto&& socket) { async_send_doc_queued(socket, data); },
-			player->socket()
-		);
+
+	void send_to_player(player_iterator player, simple_wml::document& data)
+	{
+		utils::visit([this, &data](auto&& socket) { async_send_doc_queued(socket, data); }, player->socket());
 	}
-	void send_to_player(any_socket_ptr socket, simple_wml::document& data) {
-		if(player_connections_.get<socket_t>().find(socket) != player_connections_.end())
-		{
-			utils::visit(
-				[this, &data](auto&& socket) { async_send_doc_queued(socket, data); },
-				socket
-			);
+
+	void send_to_player(any_socket_ptr socket, simple_wml::document& data)
+	{
+		if(player_connections_.get<socket_t>().find(socket) != player_connections_.end()) {
+			utils::visit([this, &data](auto&& socket) { async_send_doc_queued(socket, data); }, socket);
 		}
 	}
+
 	void send_server_message_to_lobby(const std::string& message, utils::optional<player_iterator> exclude = {});
 	void send_server_message_to_all(const std::string& message, utils::optional<player_iterator> exclude = {});
 
-	bool player_is_in_game(player_iterator player) const {
+	bool player_is_in_game(player_iterator player) const
+	{
 		return player->get_game() != nullptr;
 	}
 
@@ -138,13 +155,18 @@ private:
 	struct queue_info
 	{
 		queue_info(int id, const std::string& name, int required, config game)
-		: id(id)
-		, display_name(name)
-		, players_required(required)
-		, players_in_queue()
-		, settings(game)
+			: id(id)
+			, display_name(name)
+			, players_required(required)
+			, players_in_queue()
+			, settings(game)
+			, required_addons()
 		{
-
+			for(const config& addon : settings.child_range("addon")) {
+				if(addon.has_attribute("id") && addon["required"].to_bool(false)) {
+					required_addons.push_back(addon["id"].str());
+				}
+			}
 		}
 
 		int id;
@@ -152,6 +174,7 @@ private:
 		std::size_t players_required;
 		std::vector<std::string> players_in_queue;
 		config settings;
+		std::vector<std::string> required_addons;
 	};
 
 	std::deque<login_log> failed_logins_;
@@ -176,8 +199,8 @@ private:
 	// settings from the server config
 	std::vector<std::string> accepted_versions_;
 	std::string recommended_version_;
-	std::map<std::string,config> redirected_versions_;
-	std::map<std::string,config> proxy_versions_;
+	std::map<std::string, config> redirected_versions_;
+	std::map<std::string, config> proxy_versions_;
 	std::vector<std::string> disallowed_names_;
 	std::map<int, queue_info> queue_info_;
 	std::string admin_passwd_;
@@ -245,7 +268,7 @@ private:
 	/** Process commands from admins and users. */
 	std::string process_command(std::string cmd, std::string issuer_name);
 
-	void delete_game(int, const std::string& reason="");
+	void delete_game(int, const std::string& reason = "");
 
 	void update_game_in_lobby(game& g, utils::optional<player_iterator> exclude = {});
 
@@ -257,38 +280,38 @@ private:
 #endif
 	void setup_handlers();
 
-	typedef std::function<void(const std::string&, const std::string&, std::string&, std::ostringstream *)> cmd_handler;
+	typedef std::function<void(const std::string&, const std::string&, std::string&, std::ostringstream*)> cmd_handler;
 	std::map<std::string, cmd_handler> cmd_handlers_;
 
-	void shut_down_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void restart_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void sample_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void help_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void stats_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void metrics_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void requests_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void roll_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void games_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void wml_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void adminmsg_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void pm_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void version_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void msg_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void lobbymsg_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void status_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void clones_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void bans_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void ban_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void unban_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void ungban_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void kick_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void kickban_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void gban_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void motd_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void searchlog_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void dul_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void stopgame_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
-	void reset_queues_handler(const std::string &, const std::string &, std::string &, std::ostringstream *);
+	void shut_down_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void restart_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void sample_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void help_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void stats_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void metrics_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void requests_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void roll_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void games_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void wml_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void adminmsg_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void pm_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void version_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void msg_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void lobbymsg_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void status_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void clones_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void bans_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void ban_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void unban_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void ungban_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void kick_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void kickban_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void gban_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void motd_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void searchlog_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void dul_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void stopgame_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
+	void reset_queues_handler(const std::string&, const std::string&, std::string&, std::ostringstream*);
 
 #ifndef _WIN32
 	void handle_sighup(const boost::system::error_code& error, int signal_number);
@@ -310,4 +333,4 @@ private:
 	void send_queue_update(const queue_info& queue, utils::optional<player_iterator> exclude = {});
 };
 
-}
+} // namespace wesnothd
